@@ -1,11 +1,10 @@
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
-import os
 
 app = FastAPI()
 
-# Ensure wide-open CORS so the grader can talk to Render
+# Keep wide-open CORS so the grader can talk to Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,8 +13,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Paste your active trycloudflare.com URL here
-LOCAL_OLLAMA_TUNNEL = "https://ga2-6-jb23.onrender.com" # Update this to your current .trycloudflare.com link if it changed
+# Your active trycloudflare.com URL here
+LOCAL_OLLAMA_TUNNEL = "https://your-current-subdomain.trycloudflare.com"
 
 @app.options("/{path:path}")
 async def preflight():
@@ -26,18 +25,20 @@ async def proxy_chat(request: Request):
     try:
         body = await request.json()
         
-        # Extract the clean hostname from your tunnel URL (e.g., "subdomain.trycloudflare.com")
-        tunnel_host = LOCAL_OLLAMA_TUNNEL.replace("https://", "").replace("http://", "").split("/")[0]
+        # Prepare headers to forward
+        headers = {}
+        for k, v in request.headers.items():
+            if k.lower() not in ["host", "origin", "referer", "content-length"]:
+                headers[k] = v
+                
+        # Force a local host header so Ollama accepts it natively
+        headers["Host"] = "localhost:11434"
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{LOCAL_OLLAMA_TUNNEL.rstrip('/')}/v1/chat/completions",
                 json=body,
-                headers={
-                    "Host": tunnel_host,  # Match the tunnel's public host instead of localhost
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", # Mask Render's identity
-                    "Accept": "application/json"
-                }
+                headers=headers
             )
             
             return Response(
