@@ -14,7 +14,7 @@ app.add_middleware(
 )
 
 # Your active trycloudflare.com URL here
-LOCAL_OLLAMA_TUNNEL = "https://your-current-subdomain.trycloudflare.com"
+LOCAL_OLLAMA_TUNNEL = "https://symphony-careers-faster-concentration.trycloudflare.com"
 
 @app.options("/{path:path}")
 async def preflight():
