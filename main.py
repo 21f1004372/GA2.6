@@ -1,14 +1,11 @@
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("proxy")
+import os
 
 app = FastAPI()
 
-# Wide open CORS
+# Ensure wide-open CORS so the grader can talk to Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,39 +14,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Paste your active cloudflared tunnel base URL here (NO trailing slash)
-# e.g., "https://your-subdomain.trycloudflare.com"
-LOCAL_OLLAMA_TUNNEL = "https://symphony-careers-faster-concentration.trycloudflare.com"
+# Paste your active trycloudflare.com URL here
+LOCAL_OLLAMA_TUNNEL = "https://ga2-6-jb23.onrender.com" # Update this to your current .trycloudflare.com link if it changed
 
 @app.options("/{path:path}")
-async def preflight_handler():
-    """Explicitly intercept and green-light browser preflight checks."""
+async def preflight():
     return Response(status_code=200)
 
-@app.api_route("/v1/chat/completions", methods=["POST", "OPTIONS"])
+@app.post("/v1/chat/completions")
 async def proxy_chat(request: Request):
-    if request.method == "OPTIONS":
-        return Response(status_code=200)
-        
     try:
         body = await request.json()
-        logger.info(f"Forwarding payload to Ollama: {body}")
+        
+        # Extract the clean hostname from your tunnel URL (e.g., "subdomain.trycloudflare.com")
+        tunnel_host = LOCAL_OLLAMA_TUNNEL.replace("https://", "").replace("http://", "").split("/")[0]
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{LOCAL_OLLAMA_TUNNEL.rstrip('/')}/v1/chat/completions",
                 json=body,
-                headers={"Host": "localhost:11434"}  # Mimic local host header
+                headers={
+                    "Host": tunnel_host,  # Match the tunnel's public host instead of localhost
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", # Mask Render's identity
+                    "Accept": "application/json"
+                }
             )
             
-            logger.info(f"Ollama responded with status: {response.status_code}")
             return Response(
-                content=response.content, 
-                status_code=response.status_code, 
+                content=response.content,
+                status_code=response.status_code,
                 media_type="application/json"
             )
             
     except Exception as e:
-        logger.error(f"Proxy generation failed: {str(e)}")
-        # Fallback response ensuring CORS stays alive even on internal error
-        raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
